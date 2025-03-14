@@ -1,0 +1,119 @@
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow import keras
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+
+# =======================
+# Data Preparation
+# =======================
+# Assuming 'balanced_df' is your downsampled DataFrame
+data = df3_cleaned[['DATE/TIME', 'DATA (psi)']].copy()
+
+# Convert 'DATE/TIME' to datetime format if it's not already
+data['DATE/TIME'] = pd.to_datetime(data['DATE/TIME'])
+data.set_index('DATE/TIME', inplace=True)
+
+# =======================
+# Feature Scaling
+# =======================
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_data = scaler.fit_transform(data[['DATA (psi)']])
+
+# =======================
+# Creating Sequences for LSTM
+# =======================
+def create_sequences(data, seq_length):
+    X, y = [], []
+    for i in range(seq_length, len(data)):
+        X.append(data[i-seq_length:i])
+        y.append(data[i])
+    return np.array(X), np.array(y)
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+
+# =======================
+# Sequence Creation
+# =======================
+SEQ_LENGTH = 30  # Increased to capture longer-term patterns
+X, y = create_sequences(scaled_data, SEQ_LENGTH)
+
+# Reshape for LSTM input (samples, time steps, features)
+X = X.reshape(X.shape[0], X.shape[1], 1)
+
+# =======================
+# Train-Test Split
+# =======================
+train_size = int(len(X) * 0.9)
+X_train, X_test = X[:train_size], X[train_size:]
+y_train, y_test = y[:train_size], y[train_size:]
+
+# =======================
+# LSTM Model Design
+# =======================
+model = Sequential()
+model.add(LSTM(64, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])))
+model.add(Dropout(0.2))
+model.add(LSTM(32, return_sequences=False))
+model.add(Dropout(0.2))
+model.add(Dense(16, activation='relu'))
+model.add(Dense(1))
+
+# Compile with a reduced learning rate for better convergence
+model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
+
+# =======================
+# Callbacks for Improvement
+# =======================
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+
+model_checkpoint = ModelCheckpoint(
+    'best_lstm_model.h5',
+    monitor='val_loss',
+    save_best_only=True,
+    mode='min',
+    verbose=1
+)
+
+# =======================
+# Model Training
+# =======================
+history = model.fit(
+    X_train, y_train,
+    epochs=50,
+    batch_size=64,      # Keeping batch size small to capture finer details
+    validation_data=(X_test, y_test),
+    callbacks=[early_stopping, model_checkpoint],
+    verbose=1
+)
+
+
+# =======================
+# Evaluation
+# =======================
+# Predict on test data
+y_pred = model.predict(X_test)
+
+# Reverse scaling for true values
+y_test_actual = scaler.inverse_transform(y_test)
+y_pred_actual = scaler.inverse_transform(y_pred)
+
+# =======================
+# Visualization
+# =======================
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(12, 6))
+plt.plot(data.index[-len(y_test_actual):], y_test_actual, label='Actual Data', color='blue')
+plt.plot(data.index[-len(y_pred_actual):], y_pred_actual, label='Predicted Data', color='red')
+plt.title('LSTM Model Forecasting')
+plt.xlabel('Date')
+plt.ylabel('DATA (psi)')
+plt.legend()
+plt.show()
