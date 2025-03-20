@@ -1,3 +1,4 @@
+//Best model v1 - 90%
 def create_sequences(data, seq_length):
     X, y = [], []
     for i in range(len(data) - seq_length):
